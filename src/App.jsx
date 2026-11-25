@@ -167,7 +167,7 @@ export default function App() {
 
           <label className="mt-4 flex cursor-pointer items-center gap-2.5 text-sm text-slate-700">
             <input type="checkbox" checked={deep} onChange={(e) => setDeep(e.target.checked)} className="h-4 w-4 accent-[#039be5]" />
-            Jawaban mendalam dari cloud (Gemini 2.5 Flash) — butuh internet, hasil lebih kaya
+            Jawaban mendalam dari cloud (Gemini 3.8 Flash) — butuh internet, hasil lebih kaya
           </label>
 
           <button
@@ -182,7 +182,7 @@ export default function App() {
           {error && <p className="mt-3 rounded-xl bg-red-50 px-3.5 py-2.5 text-sm text-red-700" role="alert">{error}</p>}
           <p className="mt-3 text-xs leading-relaxed text-slate-400">
             Cara kerja: materi diproses oleh Gemini Nano langsung di perangkatmu bila tersedia (bisa offline, tanpa kuota).
-            Bila tidak tersedia, Firebase AI Logic otomatis memakai Gemini 2.5 Flash di cloud.
+            Bila tidak tersedia, Firebase AI Logic otomatis memakai Gemini 3.8 Flash di cloud.
           </p>
         </section>
 
@@ -237,7 +237,7 @@ export default function App() {
       </main>
 
       <footer className="mt-8 text-center text-xs leading-relaxed text-slate-400">
-        KelasOffline · Dibangun dengan Firebase AI Logic Hybrid Inference — Gemini Nano di perangkat + Gemini 2.5 Flash di cloud ·
+        KelasOffline · Dibangun dengan Firebase AI Logic Hybrid Inference — Gemini Nano di perangkat + Gemini 3.8 Flash di cloud ·
         #BuildHybridAI 2026
       </footer>
     </div>
