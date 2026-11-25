@@ -29,14 +29,17 @@ const resultSchema = Schema.object({
           question: Schema.string(),
           answer: Schema.string(),
         },
-        requiredProperties: ["question", "answer"],
+        // No optionalProperties: in this SDK every property is required by
+        // default, and ObjectSchema.toJSON() emits the standard "required"
+        // field. (The older "requiredProperties" param is copied verbatim
+        // into the request by the Schema base class and the Gemini API
+        // rejects it with HTTP 400 — verified live 2026-11-25.)
       }),
       minItems: 3,
       maxItems: 3,
       description: "Exactly 3 practice questions with their answer key.",
     }),
   },
-  requiredProperties: ["summary", "quiz"],
 });
 
 // IMPORTANT (learned from the installed SDK source, @firebase/ai v12.19):
