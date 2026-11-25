@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+@theme {
+  /* Firebase blue as the single accent, per the product spec. */
+  --color-accent: #039be5;
+  --color-accent-dark: #0288d1;
+  --color-accent-soft: #e1f5fe;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  @apply bg-white text-slate-800 antialiased;
+}
