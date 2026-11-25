@@ -192,10 +192,16 @@ export async function summarizeAndQuiz(material, { deep = false, onProgress = ()
     // Required by the hybrid SDK: initialize the on-device model on a user
     // interaction (this runs inside the button click handler chain), before
     // the first prompt. Reports Gemini Nano download progress when relevant.
+    // A failed init/download must not kill the request — the cloud chain
+    // below can still serve it.
     onProgress(nano === "available" ? "Menyiapkan Gemini Nano di perangkat…" : "Menyiapkan model…");
-    await model.initializeDeviceModel((v) => {
-      onProgress(`Mengunduh Gemini Nano… ${Math.round(v * 100)}%`);
-    });
+    try {
+      await model.initializeDeviceModel((v) => {
+        onProgress(`Mengunduh Gemini Nano… ${Math.round(v * 100)}%`);
+      });
+    } catch {
+      /* on-device init failed; fall through to generation/cloud */
+    }
   }
   onProgress(nano === "available" ? "Memproses di perangkat (offline-ready)…" : "Memproses…");
   try {
@@ -207,11 +213,17 @@ export async function summarizeAndQuiz(material, { deep = false, onProgress = ()
     const modeServed = nano === "available" ? "on_device" : "cloud";
     return done(data, modeServed, modeServed === "on_device" ? "gemini-nano" : CLOUD_MODEL);
   } catch (err) {
-    // The hybrid model's cloud leg uses the primary model only. If it hit a
-    // temporary server-side capacity error (and Nano did not serve), walk
-    // the cloud fallback chain before giving up.
-    if (nano === "available" || !isServerError(err)) throw err;
-    const { text, modelUsed } = await generateCloud(material, onProgress);
-    return done(parseResult(text), "cloud", modelUsed);
+    // The SDK decides on-device vs cloud BEFORE the prompt runs, so an
+    // on-device prompt failure does NOT fall back by itself — e.g. Gemini
+    // Nano's context window rejecting a long material ("The input is too
+    // large", seen live 2026-11-25). Likewise a cloud-leg capacity error
+    // only used the primary model. Either way: walk the cloud fallback
+    // chain before giving up. The badge stays honest — it will read Cloud.
+    try {
+      const { text, modelUsed } = await generateCloud(material, onProgress);
+      return done(parseResult(text), "cloud", modelUsed);
+    } catch {
+      throw err;
+    }
   }
 }
