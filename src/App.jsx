@@ -103,6 +103,7 @@ export default function App() {
           sourceChars: text.length,
           mode: out.modeServed,
           responseMs: out.responseMs,
+          modelUsed: out.modelUsed || null,
           summary: out.summary,
           quiz: out.quiz,
         }).catch(() => {});
