@@ -6,14 +6,14 @@
 //    is available in Chrome, inference runs on-device (works fully offline);
 //    otherwise the SDK falls back to the cloud model automatically.
 //  - "Deep answer" toggle: a model with InferenceMode.ONLY_IN_CLOUD using
-//    Gemini 2.5 Flash for a richer answer.
+//    Gemini 3.8 Flash for a richer answer.
 // Output is requested as structured JSON (supported on-device and in cloud)
 // so the UI never has to guess at free-form text.
 
 import { getGenerativeModel, InferenceMode, Schema } from "firebase/ai";
 import { ai } from "../firebase.js";
 
-export const CLOUD_MODEL = "gemini-2.5-flash";
+export const CLOUD_MODEL = "gemini-3.8-flash";
 
 const resultSchema = Schema.object({
   properties: {
@@ -143,7 +143,7 @@ function parseResult(text) {
 export async function summarizeAndQuiz(material, { deep = false, onProgress = () => {} } = {}) {
   const started = performance.now();
   if (deep) {
-    onProgress("Menghubungi Gemini 2.5 Flash di cloud…");
+    onProgress("Menghubungi Gemini 3.8 Flash di cloud…");
     const result = await cloudModel.generateContent(PROMPT(material));
     const data = parseResult(result.response.text());
     return { ...data, modeServed: "cloud", responseMs: Math.round(performance.now() - started) };
