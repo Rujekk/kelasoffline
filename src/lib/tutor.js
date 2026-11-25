@@ -76,27 +76,59 @@ const resultJsonSchema = {
   required: ["summary", "quiz"],
 };
 
+// Cloud fallback chain: the newest Flash can hit temporary capacity spikes
+// (HTTP 500 "high demand", seen live 2026-11-25). On a server-side error we
+// retry once, then fall back to the Lite model Google provisions for new
+// projects. Client errors (400 etc.) are NOT retried — they would fail again.
+export const FALLBACK_MODEL = "gemini-3.5-flash-lite";
+
+const jsonConfig = {
+  responseMimeType: "application/json",
+  responseSchema: resultSchema,
+};
+
 const hybridModel = getGenerativeModel(ai, {
   mode: InferenceMode.PREFER_ON_DEVICE,
-  inCloudParams: {
-    model: CLOUD_MODEL,
-    generationConfig: {
-      responseMimeType: "application/json",
-      responseSchema: resultSchema,
-    },
-  },
+  inCloudParams: { model: CLOUD_MODEL, generationConfig: jsonConfig },
   onDeviceParams: {
     promptOptions: { responseConstraint: resultJsonSchema },
   },
 });
 
-const cloudModel = getGenerativeModel(ai, {
-  model: CLOUD_MODEL,
-  generationConfig: {
-    responseMimeType: "application/json",
-    responseSchema: resultSchema,
-  },
-});
+const cloudModelCache = new Map();
+function cloudModelFor(name) {
+  if (!cloudModelCache.has(name)) {
+    cloudModelCache.set(name, getGenerativeModel(ai, { model: name, generationConfig: jsonConfig }));
+  }
+  return cloudModelCache.get(name);
+}
+
+function isServerError(err) {
+  const msg = String(err?.message || err);
+  return /\b(500|503)\b/.test(msg) || /high demand|overloaded|UNAVAILABLE/i.test(msg);
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Runs the prompt against the cloud chain; resolves { text, modelUsed }.
+async function generateCloud(material, onProgress) {
+  const chain = [CLOUD_MODEL, FALLBACK_MODEL];
+  let lastErr;
+  for (const name of chain) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        onProgress(`Menghubungi ${name === CLOUD_MODEL ? "Gemini 3.8 Flash" : "Gemini 3.5 Flash-Lite"} di cloud…`);
+        const result = await cloudModelFor(name).generateContent(PROMPT(material));
+        return { text: result.response.text(), modelUsed: name };
+      } catch (err) {
+        lastErr = err;
+        if (!isServerError(err)) throw err;
+        if (attempt < 2) await sleep(3000);
+      }
+    }
+  }
+  throw lastErr;
+}
 
 // Gemini Nano availability via the Chrome Prompt API global.
 // Returns: "available" | "downloadable" | "downloading" | "unavailable" | "unsupported"
@@ -139,14 +171,19 @@ function parseResult(text) {
 // Runs the one core feature. Options:
 //   deep: boolean — force the cloud model for a deeper answer.
 //   onProgress: (msg) => void — status/download progress updates.
-// Resolves: { summary, quiz, modeServed: "on_device" | "cloud", responseMs }
+// Resolves: { summary, quiz, modeServed: "on_device" | "cloud", responseMs, modelUsed }
 export async function summarizeAndQuiz(material, { deep = false, onProgress = () => {} } = {}) {
   const started = performance.now();
+  const done = (data, modeServed, modelUsed) => ({
+    ...data,
+    modeServed,
+    modelUsed,
+    responseMs: Math.round(performance.now() - started),
+  });
+
   if (deep) {
-    onProgress("Menghubungi Gemini 3.8 Flash di cloud…");
-    const result = await cloudModel.generateContent(PROMPT(material));
-    const data = parseResult(result.response.text());
-    return { ...data, modeServed: "cloud", responseMs: Math.round(performance.now() - started) };
+    const { text, modelUsed } = await generateCloud(material, onProgress);
+    return done(parseResult(text), "cloud", modelUsed);
   }
 
   const nano = await probeNano();
@@ -161,11 +198,20 @@ export async function summarizeAndQuiz(material, { deep = false, onProgress = ()
     });
   }
   onProgress(nano === "available" ? "Memproses di perangkat (offline-ready)…" : "Memproses…");
-  const result = await model.generateContent(PROMPT(material));
-  const data = parseResult(result.response.text());
-  // With PREFER_ON_DEVICE the SDK serves on-device exactly when Nano is
-  // available; otherwise it transparently falls back to the cloud. We label
-  // the result by the availability observed for this request.
-  const modeServed = nano === "available" ? "on_device" : "cloud";
-  return { ...data, modeServed, responseMs: Math.round(performance.now() - started) };
+  try {
+    const result = await model.generateContent(PROMPT(material));
+    const data = parseResult(result.response.text());
+    // With PREFER_ON_DEVICE the SDK serves on-device exactly when Nano is
+    // available; otherwise it transparently falls back to the cloud. We label
+    // the result by the availability observed for this request.
+    const modeServed = nano === "available" ? "on_device" : "cloud";
+    return done(data, modeServed, modeServed === "on_device" ? "gemini-nano" : CLOUD_MODEL);
+  } catch (err) {
+    // The hybrid model's cloud leg uses the primary model only. If it hit a
+    // temporary server-side capacity error (and Nano did not serve), walk
+    // the cloud fallback chain before giving up.
+    if (nano === "available" || !isServerError(err)) throw err;
+    const { text, modelUsed } = await generateCloud(material, onProgress);
+    return done(parseResult(text), "cloud", modelUsed);
+  }
 }
