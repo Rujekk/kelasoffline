@@ -39,19 +39,61 @@ const resultSchema = Schema.object({
   requiredProperties: ["summary", "quiz"],
 });
 
-function makeModel(mode) {
-  return getGenerativeModel(ai, {
+// IMPORTANT (learned from the installed SDK source, @firebase/ai v12.19):
+// when `mode` is set, getGenerativeModel treats the params as HybridParams
+// and IGNORES top-level `model`/`generationConfig` — the cloud side must be
+// configured via `inCloudParams` (otherwise it silently defaults to
+// gemini-2.5-flash-lite), and the on-device side via `onDeviceParams`, whose
+// promptOptions.responseConstraint carries the JSON schema to the Chrome
+// Prompt API. The plain (non-hybrid) cloud model below uses the classic
+// top-level form, which is correct when no mode is set.
+const resultJsonSchema = {
+  type: "object",
+  properties: {
+    summary: {
+      type: "array",
+      items: { type: "string" },
+      minItems: 3,
+      maxItems: 3,
+    },
+    quiz: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          question: { type: "string" },
+          answer: { type: "string" },
+        },
+        required: ["question", "answer"],
+      },
+      minItems: 3,
+      maxItems: 3,
+    },
+  },
+  required: ["summary", "quiz"],
+};
+
+const hybridModel = getGenerativeModel(ai, {
+  mode: InferenceMode.PREFER_ON_DEVICE,
+  inCloudParams: {
     model: CLOUD_MODEL,
-    mode,
     generationConfig: {
       responseMimeType: "application/json",
       responseSchema: resultSchema,
     },
-  });
-}
+  },
+  onDeviceParams: {
+    promptOptions: { responseConstraint: resultJsonSchema },
+  },
+});
 
-const hybridModel = makeModel(InferenceMode.PREFER_ON_DEVICE);
-const cloudModel = makeModel(InferenceMode.ONLY_IN_CLOUD);
+const cloudModel = getGenerativeModel(ai, {
+  model: CLOUD_MODEL,
+  generationConfig: {
+    responseMimeType: "application/json",
+    responseSchema: resultSchema,
+  },
+});
 
 // Gemini Nano availability via the Chrome Prompt API global.
 // Returns: "available" | "downloadable" | "downloading" | "unavailable" | "unsupported"
